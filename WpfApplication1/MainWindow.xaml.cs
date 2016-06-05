@@ -45,7 +45,7 @@ namespace DSPHomework {
         public PlotModel IFFTedData { get; private set; }
         public MainViewModel() {
             originData = new PlotModel { Title = "理想低通滤波器频域特性" };
-            IFFTedData = new PlotModel { Title = "IDFT之后波形" };
+            IFFTedData = new PlotModel { Title = "IDTFT之后波形" };
             originData.Series.Add(new FunctionSeries((x) => IdealLowPassFilter(new Complex(x,0)).Real, -40, 40, 0.0100000001f, "IdealLowPassFilter(t)"));
             IFFTedData.Series.Add(new FunctionSeries((x) => DSPTools.IDTFT(x, IdealLowPassFilter).Real, -20, 20, 0.0100000001f, "IDTFTedData(w)"));
         }
