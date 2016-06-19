@@ -8,22 +8,35 @@ using System.Threading;
 
 namespace DSPHomework {
     static class DSPTools {
-        static private Ft boostFFTFt;
+        static private System.Func<double,double> boostFFTFt;
         static double boostFFTStartTime, boostFFTEndTime;
         static int boostFFTN;
         static Complex[] boostFFTData;
         /// <summary>
-        /// 定义代表f（x）的函数委托
+        /// FFT方法实现快速卷积
         /// </summary>
-        /// <param name="t">时间自变量</param>
-        /// <returns>因变量</returns>
-        public delegate double Ft(double t);
-        /// <summary>
-        /// 定义代表X（w）的函数委托
-        /// </summary>
-        /// <param name="w">自变量</param>
-        /// <returns>因变量</returns>
-        public delegate Complex Xw(Complex w);
+        /// <param name="X">序列A</param>
+        /// <param name="Y">序列B</param>
+        /// <returns>两个序列卷积结果</returns>
+        /// 
+        public static Complex[] FFTConvolution(Complex[] X, Complex[] Y) {
+            //生成两个相乘数组
+            Complex[] FFTedX = new Complex[X.Length + Y.Length - 1];
+            Complex[] FFTedY = new Complex[X.Length + Y.Length - 1];
+            FFTedX.Initialize();
+            FFTedY.Initialize();
+            //复制数据到相乘数组
+            X.CopyTo(FFTedX, 0);
+            Y.CopyTo(FFTedY, 0);
+            //执行fft
+            FFTedX = StartFFT(FFTedX);
+            FFTedY = StartFFT(FFTedY);
+            //相乘
+            FFTedX.Zip(FFTedY, (x, y) => x * y);
+            //iFFT
+            FFTedX = StartIFFT(FFTedX);
+            return FFTedX;
+        }
         /// <summary>
         /// 离散逼近定积分
         /// </summary>
@@ -32,7 +45,7 @@ namespace DSPHomework {
         /// <param name="step">积分精度(x轴步进)</param>
         /// <param name="f">被积函数</param>
         /// <returns>积分值</returns>
-        private static double Integral(double low, double high, double step, Ft f) {
+        private static double Integral(double low, double high, double step, System.Func<double,double> f) {
             double sum = 0;
             for (int i = 0; i <= (high - low) / step; i++) {
                 sum += f(low + i * step);
@@ -46,7 +59,7 @@ namespace DSPHomework {
         /// <param name="t">时域横坐标</param>
         /// <param name="X">系统函数</param>
         /// <returns></returns>
-        public static Complex IDTFT(double t,Xw X) {
+        public static Complex IDTFT(double t, System.Func<Complex, Complex> X) {
             double real = Integral(-Math.PI, Math.PI, 0.01, (omega) => Math.Cos(t * omega * X(Complex.Exp(new Complex(0,omega))).Magnitude));
             double imag = Integral(-Math.PI, Math.PI, 0.01, (omega) => Math.Sin(t * omega * X(Complex.Exp(new Complex(0, omega))).Magnitude));
             Complex result = new Complex(real, imag) / Math.PI / 2;
@@ -61,23 +74,24 @@ namespace DSPHomework {
         /// <param name="endTime">采样结束时间</param>
         /// <param name="N">采样点数</param>
         /// <returns>频域对应值</returns>
-        public static Complex FFT(double w,Ft F,double startTime,double endTime,int N) {
+        public static Complex FFT(double w,System.Func<double,double> F,double startTime,double endTime,int N) {
             if (endTime > startTime) {//数据合法性校验
                 double T = (endTime - startTime) / N;//采样周期
                 //求最接近的2的幂
                 int SequenceNumber = (int)Math.Pow(2, Math.Ceiling(Math.Log(N) / Math.Log(2)));
                 Complex[] Data = new Complex[SequenceNumber];
                 Data.Initialize();
-                //生成采样数据
-                for (int i = 0; i < N; i++) {
-                    Data[i] = new Complex(F(i * T + startTime), 0);
-                }
                 //如果这一次的和上次的数据不一样，那就重新FFT
-                if (startTime != boostFFTStartTime && endTime != boostFFTEndTime && N != boostFFTN && F != boostFFTFt) {
+                if (startTime != boostFFTStartTime || endTime != boostFFTEndTime || N != boostFFTN || F != boostFFTFt) {
+
+                    //生成采样数据
+                    for (int i = 0; i < N; i++) {
+                        Data[i] = new Complex(F(i * T + startTime), 0);
+                    }
                     //FFT采样数据
                     Data = SubFFT(Data, false);
-                    Data = Data.Select((x) => x * 2 / N).ToArray();
-                    //Data = FFTShift(Data);
+                    Data = Data.Select((x) => x * 2 / SequenceNumber).ToArray();
+                    Data = FFTShift(Data);
                     //保存这一次的，为了加速计算
                     boostFFTStartTime = startTime;
                     boostFFTEndTime = endTime;
@@ -89,7 +103,7 @@ namespace DSPHomework {
                     Data = boostFFTData;
                 }
                 //f=采样频率/2*(-1+2/SequenceNumber*n)
-                int n = (int)(SequenceNumber * (2*w*T+1 ) / 2);
+                int n = (int)(SequenceNumber * (2*w*T+1))/2-1;
                 if (n < Data.Length && n >= 0) {
                     return Data[n];
                 }
@@ -100,6 +114,64 @@ namespace DSPHomework {
             else {
                 throw new Exception("数据上界小于下界");
             }
+        }
+        /// <summary>
+        /// 序列的fft
+        /// </summary>
+        /// <param name="Data">数据</param>
+        /// <returns>返回fft的结果（复数）</returns>
+        public static Complex[] StartFFT(double[] Data) {
+            //AdjustDC(ref Data);//去除直流分量
+            Complex[] FFTedData = SubFFT(AddAndConvertTo2ModComp(Data), false);
+            
+            FFTedData = FFTedData.Select((x) => x * 2 / Data.Length).ToArray();
+            return FFTedData;
+        }
+        /// <summary>
+        /// 序列的fft
+        /// </summary>
+        /// <param name="Data">数据</param>
+        /// <returns>返回fft的结果（复数）</returns>
+        public static Complex[] StartFFT(Complex[] Data) {
+            //AdjustDC(ref Data);//去除直流分量
+            Complex[] FFTedData = SubFFT(AddAndConvertTo2ModComp(Data), false);
+            for (int i = 0; i < FFTedData.Length; i++) {//运算结果除以长度
+                FFTedData[i] = FFTedData[i] * 2 / FFTedData.Length;
+            }
+            return FFTedData;
+        }
+        /// <summary>
+        /// 将浮点数组转换为复数数组并补零至2的N次方个点
+        /// </summary>
+        /// <param name="Data"></param>
+        /// <returns></returns>
+        private static Complex[] AddAndConvertTo2ModComp(double[] Data) {
+            //先变为Complex类型，然后变为数组
+            return AddAndConvertTo2ModComp(Data.Select(DoubArrayToCompArray).ToArray());
+        }
+        /// <summary>
+        /// 把实数双精度浮点型变量转换为复数
+        /// </summary>
+        /// <param name="dFigure">浮点型实数</param>
+        /// <returns>复数，虚部为零</returns>
+        private static Complex DoubArrayToCompArray(double dFigure) {
+            Complex cFigure = new Complex(dFigure, 0);
+            return cFigure;
+        }
+        /// <summary>
+        /// 将浮点数组转换为复数数组并补零至2的N次方个点
+        /// </summary>
+        /// <param name="Data"></param>
+        /// <returns></returns>
+        private static Complex[] AddAndConvertTo2ModComp(Complex[] Data) {
+            //求最接近的2的幂
+            int SequenceNumber = (int)Math.Pow(2, Math.Ceiling(Math.Log(Data.Length) / Math.Log(2)));
+            //初始化2的若干次幂长度的数组
+            Complex[] compData = new Complex[SequenceNumber];
+            compData.Initialize();//初始化
+            //复制到2的若干次幂长度的数组
+            Data.CopyTo(compData, 0);
+            return compData;
         }
         /// <summary>
         /// FFT输出数据是两端为0，中心为最大，所以需要调整
@@ -114,6 +186,18 @@ namespace DSPHomework {
                 Data[i] = tempComp;
             }
             return Data;
+        }
+        /// <summary>
+        /// IFFT运算
+        /// </summary>
+        /// <param name="FData">输入的频域采样</param>
+        /// <returns>返回时域结果，从低到高为负时域到正时域</returns>
+        public static Complex[] StartIFFT(Complex[] FData) {
+            Complex[] IFFTedData = SubFFT(AddAndConvertTo2ModComp(FData), true);
+            for (int i = 0; i < IFFTedData.Length; i++) {//运算结果除以长度
+                IFFTedData[i] = IFFTedData[i] / 2;//* FData.Length;
+            }
+            return IFFTedData;
         }
         /// <summary>
         /// 傅立叶变换或反变换，递归实现多级蝶形运算

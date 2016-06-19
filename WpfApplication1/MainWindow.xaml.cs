@@ -15,47 +15,38 @@ namespace DSPHomework {
             InitializeComponent();
         }
 
-        private void t0Plus_Click(object sender, RoutedEventArgs e) {
-            if (Convert.ToInt16(t0Data.Content) < 20) {
-                t0Data.Content = (Convert.ToInt16(t0Data.Content) + 1).ToString();
-            }
-        }
-
-        private void t0Sub_Click(object sender, RoutedEventArgs e) {
-            if (Convert.ToInt16(t0Data.Content) > -20) {
-                t0Data.Content = (Convert.ToInt16(t0Data.Content) - 1).ToString();
-            }
-        }
-
-        private void f0Plus_Click(object sender, RoutedEventArgs e) {
-            if (Convert.ToInt16(f0Data.Content) < 100) {
-                f0Data.Content = (Convert.ToInt16(f0Data.Content) + 1).ToString();
-            }
-        }
-
-        private void f0Sub_Click(object sender, RoutedEventArgs e) {
-            if (Convert.ToInt16(f0Data.Content) > -100) {
-                f0Data.Content = (Convert.ToInt16(f0Data.Content) - 1).ToString();
-            }
-        }
+     
     }
 
     public class MainViewModel {
-        public PlotModel originData { get; private set; }
-        public PlotModel IFFTedData { get; private set; }
+        public PlotModel originFuncT { get; private set; }
+        public PlotModel originFuncF { get; private set; }
+        public PlotModel FliterFuncT { get; private set; }
+        public PlotModel FliterFuncF { get; private set; }
+        public PlotModel ProcedFuncT { get; private set; }
+        public PlotModel AimFuncT { get; private set; }
         public MainViewModel() {
-            originData = new PlotModel { Title = "理想低通滤波器频域特性" };
-            IFFTedData = new PlotModel { Title = "IDTFT之后波形" };
-            originData.Series.Add(new FunctionSeries((x) => IdealLowPassFilter(new Complex(x,0)).Real, -40, 40, 0.0100000001f, "IdealLowPassFilter(t)"));
-            IFFTedData.Series.Add(new FunctionSeries((x) => DSPTools.IDTFT(x, IdealLowPassFilter).Real, -20, 20, 0.0100000001f, "IDTFTedData(w)"));
+            originFuncT = new PlotModel { Title = "理想滤波器的幅频响应" };
+            FliterFuncT = new PlotModel { Title = "理想滤波器的时域冲激响应" };
+            FliterFuncF = new PlotModel { Title = "滤波器时域截断后" };
+
+
+            System.Func<double,double> idtftedFliter = (x) => DSPTools.IDTFT(x, IdealLowPassFilter).Real;
+            originFuncT.Series.Add(new FunctionSeries((x)=>IdealLowPassFilter(new Complex(x*Math.PI,0)).Real, -10, 10, 0.010000000f, "幅频响应"));
+            FliterFuncT.Series.Add(new FunctionSeries(idtftedFliter, -10, 10, 0.0100000001f, "IDTFTedData(w)"));
+            FliterFuncF.Series.Add(new FunctionSeries((x) => DSPTools.FFT(x/Math.PI/2, idtftedFliter, -50, 50, 2048).Magnitude, -6, 6, 2 / 2048f, "幅频响应"));
+
+            
+
         }
+
         public Complex IdealLowPassFilter(Complex w) {
-            if (Math.Abs(w.Real) <= 20) {
-                return 1;
+            if (Math.Abs(w.Real) <= 5 * Math.PI) {
+                return Complex.FromPolarCoordinates(1,0);
             }
             return 0;
         }
-        public double SquareWave(double t) {
+        public double originFunc(double t) {
             /*if (t <= 20&&t>0) {
                 return 1;
             }
